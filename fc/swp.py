@@ -1,6 +1,5 @@
 import enum
 import logging
-from fc.llp import LLPEndpoint
 import llp
 import queue
 import struct
@@ -83,7 +82,7 @@ class SWPSender:
         packet = SWPPacket(type=SWPType.DATA, data=data, seq_num=self.seq_no)
 
         # transmit SWP packet
-        LLPEndpoint.send(raw_bytes=packet.to_bytes())
+        self._llp_endpoint.send(raw_bytes=packet.to_bytes())
 
         # retransmit after 1 second
         retransmit = threading.Timer(interval=SWPSender._TIMEOUT, function=self._retransmit, args=[self.seq_no])
@@ -98,7 +97,7 @@ class SWPSender:
         # we haven't already received ACK for this packet
         if seq_num in self.buffer:
             packet = SWPPacket(type=SWPType.DATA, seq_num=seq_num, data=self.buffer[seq_num])
-            LLPEndpoint.send(self, raw_bytes=packet.to_bytes())
+            self._llp_endpoint.send(raw_bytes=packet.to_bytes())
             retransmit = threading.Timer(interval=SWPSender._TIMEOUT, function=self._retransmit, args=[self.seq_no])
             retransmit.start(); 
         return 
@@ -120,7 +119,7 @@ class SWPSender:
                 del self.buffer[seqno]
 
                 # indicate that there is available space
-                self.send_semaphore.release(n=1)
+                self.send_semaphore.release()
             
             # update next ack we are looking for
             self.next_ack = packet.seq_num + 1
