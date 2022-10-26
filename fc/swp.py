@@ -1,5 +1,6 @@
 import enum
 import logging
+from fc.llp import LLPEndpoint
 import llp
 import queue
 import struct
@@ -61,6 +62,10 @@ class SWPSender:
         self._recv_thread.start()
 
         # TODO: Add additional state variables
+        self.send_semaphore = threading.Semaphore(value=SWPSender._SEND_WINDOW_SIZE)
+        self.seq_no = 0
+        self.buffer = {}
+        self.next_ack = 0
 
 
     def send(self, data):
@@ -68,13 +73,34 @@ class SWPSender:
             self._send(data[i:i+SWPPacket.MAX_DATA_SIZE])
 
     def _send(self, data):
-        # TODO
+        # wait for a free space in the send window
+        self.send_semaphore.acquire()
+        
+        # add to buffer
+        self.buffer[self.seq_no] = data
+
+        # create a packet and assign a sequence number
+        packet = SWPPacket(type=SWPType.DATA, data=data, seq_num=self.seq_no)
+
+        # transmit SWP packet
+        LLPEndpoint.send(raw_bytes=packet.to_bytes())
+
+        # retransmit after 1 second
+        retransmit = threading.Timer(interval=SWPSender._TIMEOUT, function=self._retransmit, args=[self.seq_no])
+        retransmit.start()
+
+        # update sequence number
+        self.seq_no += 1
 
         return
         
     def _retransmit(self, seq_num):
-        # TODO
-
+        # we haven't already received ACK for this packet
+        if seq_num in self.buffer:
+            packet = SWPPacket(type=SWPType.DATA, seq_num=seq_num, data=self.buffer[seq_num])
+            LLPEndpoint.send(self, raw_bytes=packet.to_bytes())
+            retransmit = threading.Timer(interval=SWPSender._TIMEOUT, function=self._retransmit, args=[self.seq_no])
+            retransmit.start(); 
         return 
 
     def _recv(self):
@@ -86,7 +112,12 @@ class SWPSender:
             packet = SWPPacket.from_bytes(raw)
             logging.debug("Received: %s" % packet)
 
-            # TODO
+            # only handle ACK messages
+            if packet.type != SWPType.ACK: continue
+
+            for seqno in range(self.next_ack, packet.seq_num + 1)
+            # cancel retransmit timer by removing from buffer
+            del self.buffer[packet.seq_num]
 
         return
 
