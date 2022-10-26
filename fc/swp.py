@@ -60,7 +60,7 @@ class SWPSender:
         self._recv_thread = threading.Thread(target=self._recv)
         self._recv_thread.start()
 
-        # TODO: Add additional state variables
+        # maintain state variables
         self.send_semaphore = threading.Semaphore(value=SWPSender._SEND_WINDOW_SIZE)
         self.seq_no = 0
         self.buffer = {}
@@ -139,8 +139,10 @@ class SWPReceiver:
         # Start receive thread
         self._recv_thread = threading.Thread(target=self._recv)
         self._recv_thread.start()
-        
-        # TODO: Add additional state variables
+
+        # keeping track of data in case of OOO
+        self.buffer = {}
+        self.next_seq = 0
 
 
     def recv(self):
@@ -153,6 +155,24 @@ class SWPReceiver:
             packet = SWPPacket.from_bytes(raw)
             logging.debug("Received: %s" % packet)
             
-            # TODO
+            # only handle data packets
+            if packet.type != SWPType.DATA: continue
+
+            self.buffer[packet.seq_num] = packet.data
+            
+            while True:
+                if self.next_seq not in self.buffer:
+                    break
+
+                # data we are ready to receive
+                self._ready_data.put(self.buffer[self.next_seq])
+                del self.buffer[self.next_seq]
+
+                # update seq no we are looking for
+                self.next_seq += 1
+            
+            # send ack packet for next_seq - 1
+            packet = SWPPacket(type=SWPType.ACK, data=b'', seq_num=self.next_seq - 1)
+            self._llp_endpoint.send(raw_bytes=packet.to_bytes())
 
         return
