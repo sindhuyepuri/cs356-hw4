@@ -115,9 +115,15 @@ class SWPSender:
             # only handle ACK messages
             if packet.type != SWPType.ACK: continue
 
-            for seqno in range(self.next_ack, packet.seq_num + 1)
-            # cancel retransmit timer by removing from buffer
-            del self.buffer[packet.seq_num]
+            for seqno in range(self.next_ack, packet.seq_num + 1):
+                # cancel retransmit timer by removing from buffer
+                del self.buffer[seqno]
+
+                # indicate that there is available space
+                self.send_semaphore.release(n=1)
+            
+            # update next ack we are looking for
+            self.next_ack = packet.seq_num + 1
 
         return
 
